@@ -1,19 +1,56 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request, redirect, url_for
+from flask_pymongo import PyMongo 
+from pymongo import MongoClient
+import os
+from dotenv import load_dotenv
 
-app = Flask(__name__)
+# Load environment variables from .env file
+load_dotenv()
 
-app_data = {
-    'asset_url': '/static/jc.css',
-}
+class MyApp:
+    def __init__(self):
+        self.app = Flask(__name__)
+        self.configure_app()
+        self.asset_url = '/static/jc.css'
+        self.setup_routes()
 
-@app.route('/')
-def home():
-    home_seo = {
-        'title': 'Josh Coventry | Software Engineering Manager',
-        'description': 'Welcome to my personal website where I share my projects and thoughts.',
-        'keywords': 'home, personal, website',
-    }
-    return render_template('index.html',seo=home_seo)
+    def configure_app(self):
+        # Configure MongoDB connection
+        mongodb_uri = os.getenv('MONGODB_URI')
+        print(f'MONGODB_URI: {mongodb_uri}')  # Debugging line
+        self.app.config["MONGO_URI"] = mongodb_uri
+        self.mongo = PyMongo(self.app)
 
+    def get_metadata_by_page(self, page):
+        collection_name = os.getenv('COLLECTION_NAME')
+        if collection_name is None:
+            raise ValueError("COLLECTION_NAME environment variable is not set.")
+        
+        print(f'Accessing collection: {collection_name}')  # Debugging line
+        collection = self.mongo.db[collection_name]
+        
+        if not isinstance(collection, str):  # Check if collection is a valid object
+            return collection.find_one({'page': page}, {'_id': 0, 'page': 1, 'title': 1, 'keywords': 1, 'description': 1})
+        else:
+            raise ValueError(f"Expected a collection object but got: {type(collection)}")
+
+    def setup_routes(self):
+        @self.app.route('/')
+        def home():
+            # Call the general method to get metadata for the "home" page
+            document = self.get_metadata_by_page('home')
+            
+            # Prepare the SEO data for rendering
+            home_seo = {
+                'title': document.get('title', ''),  # Fallback to a default title if not found
+                'description': document.get('description', '.'),
+                'keywords': document.get('keywords', ''),
+            }
+            return render_template('index.html', seo=home_seo)
+
+    def run(self):
+        self.app.run(debug=True)
+        
 if __name__ == '__main__':
-    app.run(debug=True)
+    app_instance = MyApp()
+    app_instance.run()
